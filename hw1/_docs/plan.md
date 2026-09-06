@@ -119,11 +119,11 @@ bottleneck.
 
 Write endpoints: one (tick a chore). Everything else is derived.
 
-## Open decision — settle before writing any date code
+## Decision — settled
 
-**Week boundary and timezone.** Monday or Sunday start; what a housemate in another
-timezone sees on a Sunday night. Ambiguity here produces genuinely confusing bugs and
-every date calculation depends on it. Write the answer down in the config.
+**Week boundary and timezone.** Weeks start Monday; all date arithmetic runs in
+`Europe/London`; anchor date 2026-09-01. Full rule and config fields:
+`_docs/decision-week-boundary-timezone.md`.
 
 ## Out of scope for v1
 
