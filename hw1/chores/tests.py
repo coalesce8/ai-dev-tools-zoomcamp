@@ -4,10 +4,12 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ImproperlyConfigured
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.utils import timezone as dj_timezone
 
 from . import engine
 from .config import get_config, load_config
+from .models import CompletionLog
 
 VALID_CONFIG = """\
 week_start: monday
@@ -319,3 +321,50 @@ class LocalDateTests(SimpleTestCase):
     def test_naive_datetime_rejected(self):
         with self.assertRaises(ValueError):
             engine.local_date(datetime(2026, 9, 1), TZ)
+
+
+class CompletionLogTests(TestCase):
+    def test_entry_round_trips(self):
+        CompletionLog.objects.create(
+            chore_name="kitchen",
+            period_start=date(2026, 8, 31),  # Monday of the anchor week
+            done_by="Alex",
+        )
+        entry = CompletionLog.objects.get()
+        self.assertEqual(entry.chore_name, "kitchen")
+        self.assertEqual(entry.period_start, date(2026, 8, 31))
+        self.assertEqual(entry.done_by, "Alex")
+        self.assertEqual(
+            str(entry), "kitchen (2026-08-31): Alex"
+        )
+
+    def test_logged_at_defaults_to_now(self):
+        before = dj_timezone.now()
+        entry = CompletionLog.objects.create(
+            chore_name="fridge", period_start=date(2026, 9, 1), done_by="Sam"
+        )
+        self.assertGreaterEqual(entry.logged_at, before)
+        self.assertLessEqual(entry.logged_at, dj_timezone.now())
+
+    def test_same_chore_and_period_can_be_ticked_twice(self):
+        # The log is append-only history, not a uniqueness-enforced state:
+        # a second tick adds a row rather than failing or overwriting.
+        for name in ("Alex", "Sam"):
+            CompletionLog.objects.create(
+                chore_name="kitchen", period_start=date(2026, 8, 31), done_by=name
+            )
+        self.assertEqual(
+            CompletionLog.objects.filter(
+                chore_name="kitchen", period_start=date(2026, 8, 31)
+            ).count(),
+            2,
+        )
+
+    def test_ordered_newest_first(self):
+        older = CompletionLog.objects.create(
+            chore_name="kitchen", period_start=date(2026, 8, 31), done_by="Alex"
+        )
+        newer = CompletionLog.objects.create(
+            chore_name="fridge", period_start=date(2026, 9, 1), done_by="Jo"
+        )
+        self.assertEqual(list(CompletionLog.objects.all()), [newer, older])

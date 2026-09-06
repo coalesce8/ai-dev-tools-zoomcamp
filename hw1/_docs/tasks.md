@@ -11,7 +11,7 @@ completion log, anchor date) are defined in `_docs/plan.md`.
 | Settle the week-boundary and timezone decision | [#2](https://github.com/coalesce8/ai-dev-tools-zoomcamp/issues/2) | ✅ done |
 | Config file loader | [#3](https://github.com/coalesce8/ai-dev-tools-zoomcamp/issues/3) | ✅ done |
 | Rotation engine | [#4](https://github.com/coalesce8/ai-dev-tools-zoomcamp/issues/4) | ✅ done |
-| Completion log model | [#5](https://github.com/coalesce8/ai-dev-tools-zoomcamp/issues/5) | open |
+| Completion log model | [#5](https://github.com/coalesce8/ai-dev-tools-zoomcamp/issues/5) | ✅ done |
 | Swap override model | [#1](https://github.com/coalesce8/ai-dev-tools-zoomcamp/issues/1) | open |
 | Schedule service (read path) | [#6](https://github.com/coalesce8/ai-dev-tools-zoomcamp/issues/6) | open |
 | Main page | [#7](https://github.com/coalesce8/ai-dev-tools-zoomcamp/issues/7) | open |
