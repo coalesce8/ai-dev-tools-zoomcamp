@@ -117,6 +117,10 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Household rotation: people and chores come from this file, never the DB
+# (loaded and validated at startup by chores.config).
+CHORES_CONFIG_PATH = BASE_DIR / 'chores.yaml'
+
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration

@@ -1,0 +1,14 @@
+# Household rotation config — people and chores live here, never in the DB.
+# Placeholder content until task 11 (seed config) fills in the real household.
+week_start: monday        # only "monday" is valid (_docs/decision-week-boundary-timezone.md)
+timezone: Europe/London   # all date arithmetic happens in this IANA timezone
+anchor_date: 2026-09-01   # period index 0 is the period containing this date
+url_token: change-me      # unguessable URL token; rotate when someone moves out
+people:
+  - Alex
+  - Sam
+  - Jo
+chores:
+  - name: kitchen
+    period: weekly
+    offset: 0
