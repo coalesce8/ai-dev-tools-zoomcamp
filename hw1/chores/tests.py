@@ -4,12 +4,13 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ImproperlyConfigured
+from django.db import IntegrityError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone as dj_timezone
 
 from . import engine
 from .config import get_config, load_config
-from .models import CompletionLog
+from .models import CompletionLog, SwapOverride
 
 VALID_CONFIG = """\
 week_start: monday
@@ -368,3 +369,50 @@ class CompletionLogTests(TestCase):
             chore_name="fridge", period_start=date(2026, 9, 1), done_by="Jo"
         )
         self.assertEqual(list(CompletionLog.objects.all()), [newer, older])
+
+
+class SwapOverrideTests(TestCase):
+    def test_override_round_trips(self):
+        SwapOverride.objects.create(
+            chore_name="kitchen",
+            period_start=date(2026, 8, 31),  # Monday of the anchor week
+            covered_by="Sam",
+        )
+        override = SwapOverride.objects.get()
+        self.assertEqual(override.chore_name, "kitchen")
+        self.assertEqual(override.period_start, date(2026, 8, 31))
+        self.assertEqual(override.covered_by, "Sam")
+        self.assertEqual(str(override), "kitchen (2026-08-31): Sam")
+
+    def test_recorded_at_defaults_to_now(self):
+        before = dj_timezone.now()
+        override = SwapOverride.objects.create(
+            chore_name="fridge", period_start=date(2026, 9, 1), covered_by="Jo"
+        )
+        self.assertGreaterEqual(override.recorded_at, before)
+        self.assertLessEqual(override.recorded_at, dj_timezone.now())
+
+    def test_one_override_per_chore_and_period(self):
+        # Keyed on (chore, period): a second swap for the same pair is a
+        # database-level conflict — replacing it is the write path's job.
+        SwapOverride.objects.create(
+            chore_name="kitchen", period_start=date(2026, 8, 31), covered_by="Sam"
+        )
+        with self.assertRaises(IntegrityError):
+            SwapOverride.objects.create(
+                chore_name="kitchen", period_start=date(2026, 8, 31), covered_by="Jo"
+            )
+
+    def test_other_periods_and_other_chores_are_unaffected(self):
+        SwapOverride.objects.create(
+            chore_name="kitchen", period_start=date(2026, 8, 31), covered_by="Sam"
+        )
+        # Same chore, another week.
+        SwapOverride.objects.create(
+            chore_name="kitchen", period_start=date(2026, 9, 7), covered_by="Jo"
+        )
+        # Another chore, same period start.
+        SwapOverride.objects.create(
+            chore_name="fridge", period_start=date(2026, 8, 31), covered_by="Alex"
+        )
+        self.assertEqual(SwapOverride.objects.count(), 3)
