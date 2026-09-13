@@ -8,6 +8,20 @@ the host still owns floor state.
 
 **Users:** restaurant staff only. One device.
 
+### Non-goals (v1)
+
+Explicitly out of scope. Listed so they don't creep in:
+
+- No SMS or guest notifications.
+- No guest-facing routes or self check-in.
+- No authentication. The device is physically behind the host stand.
+- No table or floor-plan modelling.
+- No reservations (this is walk-ins only).
+- No manual queue reordering. The list is advisory; the host seats whoever they want by
+  tapping that party.
+- No real-time push. Single device, so polling is sufficient.
+- No multi-restaurant / multi-location tenancy.
+
 ### Design decisions worth preserving
 
 These are cheap now and expensive to retrofit:
@@ -197,3 +211,19 @@ The MVP is done when all of these pass:
       full test suite passes unchanged.
 
 ---
+
+## 7. Deferred, in the order they'd likely be built
+
+1. **SMS on ready** — Twilio, triggered from a new `notify` action. The `phone` column is
+   already there.
+2. **Auto-quote** — median of `ended_at - created_at` over the last N seated parties,
+   bucketed by `party_size`. This is why `quoted_minutes` and both timestamps are stored
+   from day one; the data will already exist when you want it.
+3. **Table inventory** — a second entity with its own state machine, and the point at
+   which the app starts telling the host *when* to seat rather than just *who* is waiting.
+   This is the real product ceiling of v1.
+4. **Multi-device** — auth, then either polling at a shorter interval or Postgres
+   `LISTEN/NOTIFY` behind a websocket. Note this is the one deferred item the
+   database-agnostic constraint would complicate.
+5. **Notes / seating preference** — deliberately cut from v1 capture; add as a nullable
+   text column when someone actually asks for it.
