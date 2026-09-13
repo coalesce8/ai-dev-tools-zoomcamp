@@ -1,6 +1,7 @@
 from datetime import timedelta
 
-from waitlist.store import store, utcnow
+from waitlist.db import utcnow
+from waitlist.models import Party
 
 
 def add(client, **overrides):
@@ -261,39 +262,46 @@ class TestRestore:
 
 
 class TestDerivedFields:
-    def test_waiting_minutes_reflects_elapsed_time(self, client):
+    def test_waiting_minutes_reflects_elapsed_time(self, client, db_session):
         party = add(client, name="Marsh")
-        record = store.get(party["id"])
+        record = db_session.get(Party, party["id"])
         record.created_at = utcnow() - timedelta(minutes=31)
+        db_session.commit()
 
         response = client.get("/api/parties", params={"status": "waiting"})
         assert response.json()[0]["waiting_minutes"] == 31
 
-    def test_is_overdue_when_elapsed_exceeds_quote(self, client):
+    def test_is_overdue_when_elapsed_exceeds_quote(self, client, db_session):
         party = add(client, name="Marsh", quoted_minutes=25)
-        record = store.get(party["id"])
+        record = db_session.get(Party, party["id"])
         record.created_at = utcnow() - timedelta(minutes=31)
+        db_session.commit()
 
         response = client.get("/api/parties", params={"status": "waiting"})
         body = response.json()[0]
         assert body["waiting_minutes"] == 31
         assert body["is_overdue"] is True
 
-    def test_not_overdue_without_a_quote(self, client):
+    def test_not_overdue_without_a_quote(self, client, db_session):
         party = add(client, name="Marsh")
-        record = store.get(party["id"])
+        record = db_session.get(Party, party["id"])
         record.created_at = utcnow() - timedelta(minutes=999)
+        db_session.commit()
 
         response = client.get("/api/parties", params={"status": "waiting"})
         assert response.json()[0]["is_overdue"] is False
 
-    def test_closed_party_waiting_minutes_uses_ended_at_not_now(self, client):
+    def test_closed_party_waiting_minutes_uses_ended_at_not_now(self, client, db_session):
         party = add(client, name="Marsh")
-        record = store.get(party["id"])
+        record = db_session.get(Party, party["id"])
         record.created_at = utcnow() - timedelta(minutes=20)
+        db_session.commit()
 
         client.post(f"/api/parties/{party['id']}/seat")
+
+        db_session.refresh(record)
         record.ended_at = record.created_at + timedelta(minutes=5)
+        db_session.commit()
 
         response = client.get("/api/parties", params={"status": "seated"})
         assert response.json()[0]["waiting_minutes"] == 5

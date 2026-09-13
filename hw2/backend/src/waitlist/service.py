@@ -1,15 +1,26 @@
 """Transition and enrichment logic, kept out of route handlers."""
 
 from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from waitlist.db import utcnow
+from waitlist.models import Party
 from waitlist.schemas import EditPartyInput, NewPartyInput, PartyOut, PartyStatus
-from waitlist.store import PartyRecord, PartyStore, utcnow
 
 TERMINAL_STATUSES: tuple[PartyStatus, ...] = ("seated", "no_show", "cancelled")
 
 
-def enrich(store: PartyStore, record: PartyRecord) -> PartyOut:
-    position = store.waiting_positions().get(record.id) if record.status == "waiting" else None
+def _waiting_positions(db: Session) -> dict[str, int]:
+    ids = db.scalars(select(Party.id).where(Party.status == "waiting").order_by(Party.created_at)).all()
+    return {party_id: index + 1 for index, party_id in enumerate(ids)}
+
+
+def enrich(db: Session, record: Party, positions: dict[str, int] | None = None) -> PartyOut:
+    if record.status == "waiting":
+        position = (positions if positions is not None else _waiting_positions(db)).get(record.id)
+    else:
+        position = None
     end = record.ended_at or utcnow()
     waiting_minutes = max(0, round((end - record.created_at).total_seconds() / 60))
     is_overdue = (
@@ -32,36 +43,46 @@ def enrich(store: PartyStore, record: PartyRecord) -> PartyOut:
     )
 
 
-def list_parties(store: PartyStore, status: PartyStatus) -> list[PartyOut]:
-    return [enrich(store, record) for record in store.by_status(status)]
+def list_parties(db: Session, status: PartyStatus) -> list[PartyOut]:
+    records = db.scalars(select(Party).where(Party.status == status).order_by(Party.created_at)).all()
+    positions = _waiting_positions(db) if status == "waiting" else {}
+    return [enrich(db, record, positions) for record in records]
 
 
-def add_party(store: PartyStore, payload: NewPartyInput) -> PartyOut:
-    record = store.add(
+def add_party(db: Session, payload: NewPartyInput) -> PartyOut:
+    record = Party(
         name=payload.name,
         party_size=payload.party_size,
         phone=payload.phone,
         quoted_minutes=payload.quoted_minutes,
+        status="waiting",
+        created_at=utcnow(),
+        ended_at=None,
     )
-    return enrich(store, record)
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return enrich(db, record)
 
 
-def get_party_or_404(store: PartyStore, party_id: str) -> PartyRecord:
-    record = store.get(party_id)
+def get_party_or_404(db: Session, party_id: str) -> Party:
+    record = db.get(Party, party_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"Party {party_id} not found")
     return record
 
 
-def update_party(store: PartyStore, party_id: str, payload: EditPartyInput) -> PartyOut:
-    record = get_party_or_404(store, party_id)
+def update_party(db: Session, party_id: str, payload: EditPartyInput) -> PartyOut:
+    record = get_party_or_404(db, party_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(record, field, value)
-    return enrich(store, record)
+    db.commit()
+    db.refresh(record)
+    return enrich(db, record)
 
 
-def _transition(store: PartyStore, party_id: str, next_status: PartyStatus) -> PartyOut:
-    record = get_party_or_404(store, party_id)
+def _transition(db: Session, party_id: str, next_status: PartyStatus) -> PartyOut:
+    record = get_party_or_404(db, party_id)
     if record.status != "waiting":
         raise HTTPException(
             status_code=409,
@@ -69,25 +90,29 @@ def _transition(store: PartyStore, party_id: str, next_status: PartyStatus) -> P
         )
     record.status = next_status
     record.ended_at = utcnow()
-    return enrich(store, record)
+    db.commit()
+    db.refresh(record)
+    return enrich(db, record)
 
 
-def seat_party(store: PartyStore, party_id: str) -> PartyOut:
-    return _transition(store, party_id, "seated")
+def seat_party(db: Session, party_id: str) -> PartyOut:
+    return _transition(db, party_id, "seated")
 
 
-def no_show_party(store: PartyStore, party_id: str) -> PartyOut:
-    return _transition(store, party_id, "no_show")
+def no_show_party(db: Session, party_id: str) -> PartyOut:
+    return _transition(db, party_id, "no_show")
 
 
-def cancel_party(store: PartyStore, party_id: str) -> PartyOut:
-    return _transition(store, party_id, "cancelled")
+def cancel_party(db: Session, party_id: str) -> PartyOut:
+    return _transition(db, party_id, "cancelled")
 
 
-def restore_party(store: PartyStore, party_id: str) -> PartyOut:
-    record = get_party_or_404(store, party_id)
+def restore_party(db: Session, party_id: str) -> PartyOut:
+    record = get_party_or_404(db, party_id)
     if record.status == "waiting":
         raise HTTPException(status_code=409, detail=f"Party {party_id} is already waiting.")
     record.status = "waiting"
     record.ended_at = None
-    return enrich(store, record)
+    db.commit()
+    db.refresh(record)
+    return enrich(db, record)
