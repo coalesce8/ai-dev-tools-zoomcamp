@@ -112,6 +112,38 @@ recreates all tables on whatever `RELAY_DATABASE_URL` points at, so stop
 the dev server first or set `RELAY_DATABASE_URL` to a scratch file before
 running tests against another database.
 
-This starter intentionally does not include Kubernetes, CI, external brokers,
-or an LLM. Those remain deployment concerns rather than part of the local
-relay protocol.
+## Run it on Kubernetes (kind)
+
+`k8s/` has manifests for a namespace, a single-replica PostgreSQL deployment
+(with a PVC and a secret holding `RELAY_DATABASE_URL`), and the agent-relay
+deployment/service. The agent-relay deployment uses `imagePullPolicy: Never`,
+so the image must be loaded into the cluster's nodes rather than pulled:
+
+```bash
+kind create cluster --name agent-relay
+docker build -t agent-relay:local .
+kind load docker-image agent-relay:local --name agent-relay
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/
+kubectl -n agent-relay rollout status deployment/agent-relay
+kubectl -n agent-relay port-forward svc/agent-relay 8000:8000
+```
+
+`readinessProbe`/`livenessProbe` on the agent-relay deployment hit `/ready`
+and `/health`; a postgres init container blocks the app pod until
+`pg_isready` succeeds.
+
+## CI
+
+`.github/workflows/ci.yml` runs on pushes/PRs touching `hw3/**`: a `test` job
+runs `uv run pytest -q` against a real PostgreSQL service container, then a
+`build-and-deploy` job builds the Docker image, loads it into an existing
+kind cluster named `agent-relay`, applies `k8s/`, and waits for the rollout.
+That second job targets a long-lived cluster created out-of-band (e.g. via
+the `kind create cluster` command above) rather than provisioning one, so it
+needs a self-hosted runner (or a local `act` run) with Docker and that
+cluster available — it will not do anything useful on a plain GitHub-hosted
+runner.
+
+This starter intentionally does not include external brokers or an LLM;
+those remain outside the local relay protocol.
