@@ -31,7 +31,11 @@ def _free_port() -> int:
 def live_server(tmp_path):
     db_path = tmp_path / "agent-relay-integration.db"
     port = _free_port()
-    env = {**os.environ, "RELAY_DATABASE_URL": f"sqlite:///{db_path}"}
+    # Default to an isolated scratch SQLite file, but respect an
+    # already-set RELAY_DATABASE_URL/DATABASE_URL (e.g. CI pointing at
+    # PostgreSQL) instead of overriding it.
+    env = {**os.environ}
+    env.setdefault("RELAY_DATABASE_URL", os.environ.get("DATABASE_URL", f"sqlite:///{db_path}"))
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", str(port)],
         cwd=REPO_ROOT,
