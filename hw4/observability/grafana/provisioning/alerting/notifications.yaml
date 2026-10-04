@@ -1,0 +1,20 @@
+# Send every alert to the incident responder. RESPONDER_URL is set in compose.yaml.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: incident-responder
+    receivers:
+      - uid: incident-responder-webhook
+        type: webhook
+        settings:
+          url: $RESPONDER_URL
+          httpMethod: POST
+
+policies:
+  - orgId: 1
+    receiver: incident-responder
+    group_by: [grafana_folder, alertname]
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 4h

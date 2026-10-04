@@ -1,0 +1,54 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: order-tracker
+    folder: Order Tracker
+    interval: 30s
+    rules:
+      - uid: order-tracker-5xx
+        title: Order Tracker 5xx responses
+        condition: B
+        data:
+          # One alert instance per endpoint that returned a 5xx in the last 5 minutes.
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                sum by (http_request_method, http_route) (
+                  increase(http_server_requests_total{job="order-tracker", http_response_status_code=~"5.."}[5m])
+                )
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        # No 5xx in the window means the query returns no series. That is the
+        # healthy case, so treat it as Normal rather than "No data".
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels:
+          service: order-tracker
+          severity: critical
+        annotations:
+          summary: "Server errors on {{ $labels.http_request_method }} {{ $labels.http_route }}"
+          description: >-
+            {{ $labels.http_request_method }} {{ $labels.http_route }} returned
+            {{ humanize $values.A.Value }} 5xx responses in the last 5 minutes.
+          endpoint: "{{ $labels.http_request_method }} {{ $labels.http_route }}"
+          window: 5m
+          dashboard_url: "http://localhost:3000/d/order-tracker/order-tracker?from=now-1h&to=now"
+          # Grafana adds dashboardURL and panelURL to notifications from these.
+          __dashboardUid__: order-tracker
+          __panelId__: "6"
